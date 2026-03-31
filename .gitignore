@@ -1,0 +1,5 @@
+logs
+config.json
+go.sum
+go.mod
+tmp/
