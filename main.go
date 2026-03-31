@@ -3,6 +3,10 @@ package main
 import (
 	"cps-go/config"
 	"cps-go/db"
+	"cps-go/handler"
+	"cps-go/platform/jd"
+	"cps-go/platform/pdd"
+	"cps-go/platform/taobao"
 	"cps-go/util"
 	"io"
 	"log"
@@ -16,32 +20,75 @@ func main() {
 	lj := util.InitLogger("logs")
 	defer lj.Close()
 
-	config, err := config.Load("config.json")
+	cfg, err := config.Load("config.json")
 	if err != nil {
 		log.Fatalf("failed to load config: %v", err)
 	}
-	// validate config
-	if err := config.Validate(); err != nil {
+	if err := cfg.Validate(); err != nil {
 		log.Fatalf("failed to validate config: %v", err)
 	}
-	// connect to MongoDB
-	db.Connect(config.Database.URL)
+
+	db.Connect(cfg.Database.URL)
 	defer db.Close()
+
+	jdClient, err := jd.NewClient(cfg.JDAppKey, cfg.JDSecretKey, cfg.JDUnionID)
+	if err != nil {
+		log.Fatalf("failed to create JD client: %v", err)
+	}
+	jdHandler := handler.NewJDHandler(jdClient)
+
+	tbClient := taobao.NewClient(cfg.TaobaoAppKey, cfg.TaobaoAppSecret, cfg.TaobaoAdzoneId)
+	tbHandler := handler.NewTaobaoHandler(tbClient)
+
+	pddClient := pdd.NewClient(cfg.PDDClientId, cfg.PDDClientSecret, cfg.PDDPid)
+	pddHandler := handler.NewPDDHandler(pddClient)
 
 	gin.DefaultWriter = io.MultiWriter(os.Stdout, lj)
 	gin.DefaultErrorWriter = io.MultiWriter(os.Stderr, lj)
 	r := gin.Default()
 
-	r.GET("/ping", func(c *gin.Context) {
-		// Return JSON response
-		c.JSON(http.StatusOK, gin.H{
-			"message": "pong",
-		})
+	r.Use(func(c *gin.Context) {
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Content-Type")
+		c.Header("Access-Control-Max-Age", "86400")
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(http.StatusNoContent)
+			return
+		}
+		c.Next()
 	})
 
-	// Start server on port 8080 (default)
-	// Server will listen on 0.0.0.0:8080 (localhost:8080 on Windows)
-	if err := r.Run(":" + config.Port); err != nil {
+	r.GET("/ping", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"message": "pong"})
+	})
+
+	api := r.Group("/api")
+	{
+		jdGroup := api.Group("/jd")
+		{
+			jdGroup.GET("/test/goods", jdHandler.TestGoodsInfo)
+			jdGroup.POST("/convert", jdHandler.ConvertLink)
+			jdGroup.POST("/orders", jdHandler.QueryOrders)
+		}
+
+		tbGroup := api.Group("/taobao")
+		{
+			tbGroup.GET("/test/recommend", tbHandler.TestRecommend)
+			tbGroup.POST("/convert", tbHandler.ConvertLink)
+		}
+
+		pddGroup := api.Group("/pdd")
+		{
+			pddGroup.GET("/authority/check", pddHandler.CheckAuthority)
+			pddGroup.GET("/authority/generate", pddHandler.GenerateAuthorityURL)
+			pddGroup.GET("/test/promote", pddHandler.TestPromotionURL)
+			pddGroup.POST("/convert", pddHandler.ConvertLink)
+		}
+	}
+
+	log.Printf("Server starting on port %s", cfg.Port)
+	if err := r.Run(":" + cfg.Port); err != nil {
 		log.Fatalf("failed to run server: %v", err)
 	}
 }

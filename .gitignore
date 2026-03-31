@@ -3,3 +3,5 @@ config.json
 go.sum
 go.mod
 tmp/
+cps-go
+cps-server

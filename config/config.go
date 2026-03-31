@@ -6,15 +6,24 @@ import (
 	"os"
 )
 
-// Config 配置结构体
 type Config struct {
 	Database struct {
 		URL string `json:"url"`
 	} `json:"database"`
-	Port string `json:"port"`
+	Port        string `json:"port"`
+	JDAppKey    string `json:"jd_appKey"`
+	JDSecretKey string `json:"jd_secretKey"`
+	JDUnionID   string `json:"jd_id"`
+
+	TaobaoAppKey    string `json:"taobao_appKey"`
+	TaobaoAppSecret string `json:"taobao_appSecret"`
+	TaobaoAdzoneId  string `json:"taobao_adzoneId"`
+
+	PDDClientId     string `json:"pdd_clientId"`
+	PDDClientSecret string `json:"pdd_clientSecret"`
+	PDDPid          string `json:"pdd_pid"`
 }
 
-// Load 从配置文件加载配置
 func Load(filename string) (*Config, error) {
 	file, err := os.Open(filename)
 	if err != nil {
@@ -31,12 +40,18 @@ func Load(filename string) (*Config, error) {
 	return &config, nil
 }
 
-// Validate 验证配置
 func (c *Config) Validate() error {
-	// 验证数据库配置
 	if c.Database.URL == "" {
 		return fmt.Errorf("请在配置文件中设置数据库连接 URL")
 	}
-
+	if c.JDAppKey == "" {
+		return fmt.Errorf("请在配置文件中设置京东联盟 AppKey (jd_appKey)")
+	}
+	if c.JDSecretKey == "" {
+		return fmt.Errorf("请在配置文件中设置京东联盟 SecretKey (jd_secretKey)")
+	}
+	if c.JDUnionID == "" {
+		return fmt.Errorf("请在配置文件中设置京东联盟 ID (jd_id)")
+	}
 	return nil
 }
