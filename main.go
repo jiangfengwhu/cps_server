@@ -76,6 +76,7 @@ func main() {
 		{
 			tbGroup.GET("/test/recommend", tbHandler.TestRecommend)
 			tbGroup.POST("/convert", tbHandler.ConvertLink)
+			tbGroup.POST("/orders", tbHandler.QueryOrders)
 		}
 
 		pddGroup := api.Group("/pdd")
@@ -84,6 +85,7 @@ func main() {
 			pddGroup.GET("/authority/generate", pddHandler.GenerateAuthorityURL)
 			pddGroup.GET("/test/promote", pddHandler.TestPromotionURL)
 			pddGroup.POST("/convert", pddHandler.ConvertLink)
+			pddGroup.POST("/orders", pddHandler.QueryOrders)
 		}
 	}
 

@@ -147,6 +147,51 @@ func (c *Client) parseError(body []byte) error {
 	return nil
 }
 
+type OrderRow struct {
+	OrderSn           string `json:"order_sn"`
+	GoodsName         string `json:"goods_name"`
+	GoodsPrice        int64  `json:"goods_price"`
+	GoodsQuantity     int64  `json:"goods_quantity"`
+	OrderAmount       int64  `json:"order_amount"`
+	PromotionRate     int64  `json:"promotion_rate"`
+	PromotionAmount   int64  `json:"promotion_amount"`
+	DuoIdServiceFee   int64  `json:"duo_id_service_fee"`
+	OrderStatus       int    `json:"order_status"`
+	OrderStatusDesc   string `json:"order_status_desc"`
+	OrderCreateTime   int64  `json:"order_create_time"`
+	OrderSettleTime   int64  `json:"order_settle_time"`
+	GoodsThumbnailURL string `json:"goods_thumbnail_url"`
+}
+
+func (c *Client) QueryOrder(orderSn string) ([]OrderRow, error) {
+	bizParams := map[string]interface{}{
+		"order_sn": orderSn,
+	}
+
+	body, err := c.callAPI("pdd.ddk.order.detail.get", bizParams)
+	if err != nil {
+		return nil, err
+	}
+
+	if apiErr := c.parseError(body); apiErr != nil {
+		return nil, apiErr
+	}
+
+	var resp struct {
+		Response *struct {
+			OrderList []OrderRow `json:"order_detail_response"`
+		} `json:"order_detail_get_response"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("解析订单数据失败: %w", err)
+	}
+	if resp.Response == nil || len(resp.Response.OrderList) == 0 {
+		return nil, nil
+	}
+
+	return resp.Response.OrderList, nil
+}
+
 // ConvertURL uses pdd.ddk.goods.zs.unit.url.gen to directly convert a source URL.
 func (c *Client) ConvertURL(sourceURL string) (*PromotionURL, error) {
 	bizParams := map[string]interface{}{

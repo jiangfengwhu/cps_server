@@ -220,6 +220,87 @@ func extractItems(data json.RawMessage, items *[]MaterialItem) error {
 	return fmt.Errorf("未找到商品列表数据")
 }
 
+type OrderDetail struct {
+	TradeId          string `json:"trade_id"`
+	TradeParentId    string `json:"trade_parent_id"`
+	ItemTitle        string `json:"item_title"`
+	ItemImg          string `json:"item_img"`
+	ItemPrice        string `json:"item_price"`
+	ItemNum          int    `json:"item_num"`
+	TotalCommissionFee string `json:"total_commission_fee"`
+	TotalCommissionRate string `json:"total_commission_rate"`
+	TkStatus         int    `json:"tk_status"`
+	TkCreateTime     string `json:"tk_create_time"`
+	TkEarningTime    string `json:"tk_earning_time"`
+	AlipayTotalPrice string `json:"alipay_total_price"`
+	PubSharePreFee   string `json:"pub_share_pre_fee"`
+	PubShareFee      string `json:"pub_share_fee"`
+}
+
+func TkStatusText(status int) string {
+	switch status {
+	case 3:
+		return "已结算"
+	case 12:
+		return "已付款"
+	case 13:
+		return "无效-Loss"
+	case 14:
+		return "已成团"
+	default:
+		return "其他"
+	}
+}
+
+func (c *Client) QueryOrders(orderIds []string) ([]OrderDetail, error) {
+	bizParams := map[string]string{
+		"query_type":  "1",
+		"position_index": "",
+		"page_size":   "20",
+	}
+
+	var allOrders []OrderDetail
+	for _, tradeParentId := range orderIds {
+		tradeParentId = strings.TrimSpace(tradeParentId)
+		if tradeParentId == "" {
+			continue
+		}
+
+		p := map[string]string{}
+		for k, v := range bizParams {
+			p[k] = v
+		}
+		p["query_type"] = "1"
+		p["trade_parent_id"] = tradeParentId
+
+		body, err := c.callAPI("taobao.tbk.order.details.get", p)
+		if err != nil {
+			continue
+		}
+		if apiErr := c.parseErrorResponse(body); apiErr != nil {
+			continue
+		}
+
+		var resp struct {
+			Response *struct {
+				Data *struct {
+					Results *struct {
+						PublisherOrderDto []OrderDetail `json:"publisher_order_dto"`
+					} `json:"results"`
+				} `json:"data"`
+			} `json:"tbk_order_details_get_response"`
+		}
+		if err := json.Unmarshal(body, &resp); err != nil {
+			continue
+		}
+		if resp.Response != nil && resp.Response.Data != nil && resp.Response.Data.Results != nil {
+			allOrders = append(allOrders, resp.Response.Data.Results.PublisherOrderDto...)
+		}
+	}
+
+	return allOrders, nil
+}
+
 func ParseItemId(rawURL string) (string, error) {
 	rawURL = strings.TrimSpace(rawURL)
 
