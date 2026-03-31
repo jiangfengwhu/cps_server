@@ -2,6 +2,7 @@ package handler
 
 import (
 	"cps-go/platform/jd"
+	"log"
 	"math"
 	"net/http"
 	"strconv"
@@ -27,7 +28,7 @@ func (h *JDHandler) TestGoodsInfo(c *gin.Context) {
 
 	skuIdNum, err := strconv.ParseInt(skuId, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "skuId格式不正确"})
+		respondBadRequest(c, ErrBadParam, err)
 		return
 	}
 
@@ -41,7 +42,7 @@ func (h *JDHandler) TestGoodsInfo(c *gin.Context) {
 
 	raw, err := h.client.CallAPIRaw("jd.union.open.goods.bigfield.query", params)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondServerError(c, ErrInternal, err)
 		return
 	}
 
@@ -53,13 +54,13 @@ func (h *JDHandler) ConvertLink(c *gin.Context) {
 		URL string `json:"url" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供商品链接"})
+		respondBadRequest(c, ErrBadParam, err)
 		return
 	}
 
 	inputURL := strings.TrimSpace(req.URL)
 	if inputURL == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "商品链接不能为空"})
+		respondBadRequest(c, ErrBadParam, nil)
 		return
 	}
 
@@ -103,7 +104,7 @@ func (h *JDHandler) ConvertLink(c *gin.Context) {
 	gr := <-goodsCh
 
 	if pr.err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成推广链接失败: " + pr.err.Error()})
+		respondServerError(c, ErrConvert, pr.err)
 		return
 	}
 
@@ -148,16 +149,16 @@ func (h *JDHandler) QueryOrders(c *gin.Context) {
 		OrderIDs []string `json:"orderIds" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供订单号"})
+		respondBadRequest(c, ErrBadParam, err)
 		return
 	}
 
 	if len(req.OrderIDs) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "订单号不能为空"})
+		respondBadRequest(c, ErrBadParam, nil)
 		return
 	}
 	if len(req.OrderIDs) > 20 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "最多支持同时查询20个订单"})
+		respondBadRequest(c, ErrBadParam, nil)
 		return
 	}
 
@@ -174,16 +175,17 @@ func (h *JDHandler) QueryOrders(c *gin.Context) {
 		if err != nil {
 			allOrders = append(allOrders, gin.H{
 				"orderId": idStr,
-				"error":   "订单号格式不正确",
+				"error":   errMsg(ErrBadParam),
 			})
 			continue
 		}
 
 		rows, err := h.client.QueryOrderRows(orderId)
 		if err != nil {
+			log.Printf("[ERROR] %s: order=%d %v", ErrOrderQuery, orderId, err)
 			allOrders = append(allOrders, gin.H{
 				"orderId": idStr,
-				"error":   "查询失败: " + err.Error(),
+				"error":   errMsg(ErrOrderQuery),
 			})
 			continue
 		}
@@ -191,7 +193,7 @@ func (h *JDHandler) QueryOrders(c *gin.Context) {
 		if len(rows) == 0 {
 			allOrders = append(allOrders, gin.H{
 				"orderId": idStr,
-				"error":   "未找到该订单的推广记录，请确认是否通过推广链接下单",
+				"error":   errMsg(ErrOrderNotFound),
 			})
 			continue
 		}

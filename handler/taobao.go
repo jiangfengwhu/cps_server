@@ -20,7 +20,7 @@ func NewTaobaoHandler(client *taobao.Client) *TaobaoHandler {
 func (h *TaobaoHandler) TestRecommend(c *gin.Context) {
 	itemId := c.Query("item_id")
 	if itemId == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供item_id参数"})
+		respondBadRequest(c, ErrBadParam, nil)
 		return
 	}
 
@@ -34,7 +34,7 @@ func (h *TaobaoHandler) TestRecommend(c *gin.Context) {
 
 	raw, err := h.client.CallAPIRaw("taobao.tbk.dg.material.recommend", bizParams)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		respondServerError(c, ErrInternal, err)
 		return
 	}
 
@@ -46,21 +46,21 @@ func (h *TaobaoHandler) QueryOrders(c *gin.Context) {
 		OrderIDs []string `json:"orderIds" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供订单号"})
+		respondBadRequest(c, ErrBadParam, err)
 		return
 	}
 	if len(req.OrderIDs) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "订单号不能为空"})
+		respondBadRequest(c, ErrBadParam, nil)
 		return
 	}
 	if len(req.OrderIDs) > 20 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "最多支持同时查询20个订单"})
+		respondBadRequest(c, ErrBadParam, nil)
 		return
 	}
 
 	orders, err := h.client.QueryOrders(req.OrderIDs)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败: " + err.Error()})
+		respondServerError(c, ErrOrderQuery, err)
 		return
 	}
 
@@ -76,7 +76,7 @@ func (h *TaobaoHandler) QueryOrders(c *gin.Context) {
 			}
 			allOrders = append(allOrders, gin.H{
 				"orderId": id,
-				"error":   "未找到该订单的推广记录，请确认是否通过推广链接下单",
+				"error":   errMsg(ErrOrderNotFound),
 			})
 		}
 	} else {
@@ -118,13 +118,13 @@ func (h *TaobaoHandler) ConvertLink(c *gin.Context) {
 		URL string `json:"url" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "请提供商品链接"})
+		respondBadRequest(c, ErrBadParam, err)
 		return
 	}
 
 	inputURL := strings.TrimSpace(req.URL)
 	if inputURL == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "商品链接不能为空"})
+		respondBadRequest(c, ErrBadParam, nil)
 		return
 	}
 
@@ -136,13 +136,13 @@ func (h *TaobaoHandler) ConvertLink(c *gin.Context) {
 
 	itemId, err := taobao.ParseItemId(urlForParsing)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "无法识别商品ID: " + err.Error()})
+		respondBadRequest(c, ErrBadParam, err)
 		return
 	}
 
 	item, err := h.client.MaterialRecommend(itemId)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取推广信息失败: " + err.Error()})
+		respondServerError(c, ErrConvert, err)
 		return
 	}
 
