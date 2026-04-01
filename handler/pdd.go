@@ -200,8 +200,27 @@ func (h *PDDHandler) ConvertLink(c *gin.Context) {
 		clickURL = promoURL.URL
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	response := gin.H{
 		"shortUrl": shortURL,
 		"clickUrl": clickURL,
-	})
+	}
+
+	if detail := promoURL.GoodsDetail; detail != nil && detail.GoodsName != "" {
+		price := float64(detail.MinGroupPrice) / 100
+		commissionRate := float64(detail.PromotionRate) / 10
+		product := gin.H{
+			"name":           detail.GoodsName,
+			"imgUrl":         detail.GoodsImageURL,
+			"price":          fmt.Sprintf("%.2f", price),
+			"shopName":       detail.MallName,
+			"shopType":       "拼多多",
+			"commissionRate": commissionRate,
+		}
+		if detail.HasCoupon && detail.CouponDiscount > 0 {
+			product["coupon"] = fmt.Sprintf("%.2f", float64(detail.CouponDiscount)/100)
+		}
+		response["product"] = product
+	}
+
+	c.JSON(http.StatusOK, response)
 }

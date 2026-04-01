@@ -17,12 +17,21 @@ import (
 const apiURL = "https://gw-api.pinduoduo.com/api/router"
 
 type PromotionURL struct {
-	URL             string `json:"url"`
-	ShortURL        string `json:"short_url"`
-	MobileURL       string `json:"mobile_url"`
-	MobileShortURL  string `json:"mobile_short_url"`
-	SchemaURL       string `json:"schema_url"`
-	WeAppInfo       any    `json:"we_app_info,omitempty"`
+	URL            string      `json:"url"`
+	ShortURL       string      `json:"short_url"`
+	MobileURL      string      `json:"mobile_url"`
+	MobileShortURL string      `json:"mobile_short_url"`
+	GoodsDetail    *GoodsBasic `json:"-"`
+}
+
+type GoodsBasic struct {
+	GoodsName     string `json:"goods_name"`
+	GoodsImageURL string `json:"goods_thumbnail_url"`
+	MinGroupPrice int64  `json:"min_group_price"`
+	PromotionRate int64  `json:"promotion_rate"`
+	CouponDiscount int64 `json:"coupon_discount"`
+	HasCoupon     bool   `json:"has_coupon"`
+	MallName      string `json:"mall_name"`
 }
 
 type Client struct {
@@ -192,7 +201,8 @@ func (c *Client) QueryOrder(orderSn string) ([]OrderRow, error) {
 	return resp.Response.OrderList, nil
 }
 
-// ConvertURL uses pdd.ddk.goods.zs.unit.url.gen to directly convert a source URL.
+// ConvertURL uses pdd.ddk.goods.zs.unit.url.gen to convert a source URL,
+// then tries to fetch product details via search API.
 func (c *Client) ConvertURL(sourceURL string) (*PromotionURL, error) {
 	bizParams := map[string]interface{}{
 		"pid":        c.Pid,
@@ -223,11 +233,48 @@ func (c *Client) ConvertURL(sourceURL string) (*PromotionURL, error) {
 		return nil, fmt.Errorf("转链返回结果为空")
 	}
 
-	return &PromotionURL{
+	result := &PromotionURL{
 		URL:            resp.Response.URL,
 		ShortURL:       resp.Response.ShortURL,
 		MobileURL:      resp.Response.MobileURL,
 		MobileShortURL: resp.Response.MobileShortURL,
-	}, nil
+	}
+
+	result.GoodsDetail = c.trySearchGoods(sourceURL)
+
+	return result, nil
+}
+
+// trySearchGoods attempts to get product details via search API (best effort).
+func (c *Client) trySearchGoods(sourceURL string) *GoodsBasic {
+	bizParams := map[string]interface{}{
+		"keyword":   sourceURL,
+		"page":      1,
+		"page_size": 10,
+		"pid":       c.Pid,
+	}
+
+	body, err := c.callAPI("pdd.ddk.goods.search", bizParams)
+	if err != nil {
+		log.Printf("[PDD] search for details failed: %v", err)
+		return nil
+	}
+	if apiErr := c.parseError(body); apiErr != nil {
+		log.Printf("[PDD] search for details API error: %v", apiErr)
+		return nil
+	}
+
+	var resp struct {
+		Response *struct {
+			GoodsList []GoodsBasic `json:"goods_list"`
+		} `json:"goods_search_response"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil || resp.Response == nil || len(resp.Response.GoodsList) == 0 {
+		return nil
+	}
+
+	g := resp.Response.GoodsList[0]
+	log.Printf("[PDD] Got goods detail: name=%s price=%d rate=%d", g.GoodsName, g.MinGroupPrice, g.PromotionRate)
+	return &g
 }
 
