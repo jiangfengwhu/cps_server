@@ -215,19 +215,99 @@ func (c *Client) QueryOrder(orderSn string) (*OrderRow, error) {
 	return resp.Order, nil
 }
 
-func (c *Client) ConvertURL(sourceURL string) (*PromotionURL, error) {
+type ConvertResult struct {
+	Promotion       *PromotionURL
+	GoodsDetail     *GoodsBasic
+	HasCommission   bool
+	Recommendations []RecommendGoods
+}
+
+type RecommendGoods struct {
+	GoodsSign      string `json:"goods_sign"`
+	GoodsName      string `json:"goods_name"`
+	GoodsImageURL  string `json:"goods_image_url"`
+	GoodsThumbnail string `json:"goods_thumbnail_url"`
+	MinGroupPrice  int64  `json:"min_group_price"`
+	PromotionRate  int64  `json:"promotion_rate"`
+	CouponDiscount int64  `json:"coupon_discount"`
+	HasCoupon      bool   `json:"has_coupon"`
+	MallName       string `json:"mall_name"`
+	SalesTip       string `json:"sales_tip"`
+}
+
+func (c *Client) ConvertURL(sourceURL string) (*ConvertResult, error) {
 	goods, err := c.searchGoods(sourceURL)
 	if err != nil {
 		return nil, err
 	}
 
-	result, err := c.generatePromotionURL(goods.GoodsSign)
+	if goods.PromotionRate <= 0 {
+		recs := c.recommendGoods(goods.GoodsSign)
+		return &ConvertResult{
+			GoodsDetail:     goods,
+			HasCommission:   false,
+			Recommendations: recs,
+		}, nil
+	}
+
+	promo, err := c.generatePromotionURL(goods.GoodsSign)
 	if err != nil {
 		return nil, err
 	}
 
-	result.GoodsDetail = goods
-	return result, nil
+	return &ConvertResult{
+		Promotion:     promo,
+		GoodsDetail:   goods,
+		HasCommission: true,
+	}, nil
+}
+
+func (c *Client) GenerateSchemaURL(goodsSign string) (string, error) {
+	promo, err := c.generatePromotionURL(goodsSign)
+	if err != nil {
+		return "", err
+	}
+	if promo.SchemaURL == "" {
+		return "", fmt.Errorf("未获取到schema_url")
+	}
+	return promo.SchemaURL, nil
+}
+
+func (c *Client) recommendGoods(goodsSign string) []RecommendGoods {
+	bizParams := map[string]interface{}{
+		"channel_type":    5,
+		"goods_sign_list": []string{goodsSign},
+		"pid":             c.Pid,
+		"limit":           20,
+	}
+
+	body, err := c.callAPI("pdd.ddk.goods.recommend.get", bizParams)
+	if err != nil {
+		log.Printf("[PDD] recommend failed: %v", err)
+		return nil
+	}
+	if apiErr := c.parseError(body); apiErr != nil {
+		log.Printf("[PDD] recommend API error: %v", apiErr)
+		return nil
+	}
+
+	var resp struct {
+		Response *struct {
+			List []RecommendGoods `json:"list"`
+		} `json:"goods_basic_detail_response"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil || resp.Response == nil {
+		return nil
+	}
+
+	var result []RecommendGoods
+	for _, g := range resp.Response.List {
+		if g.PromotionRate > 0 {
+			result = append(result, g)
+		}
+	}
+	log.Printf("[PDD] Got %d recommendations with commission", len(result))
+	return result
 }
 
 func (c *Client) searchGoods(sourceURL string) (*GoodsBasic, error) {

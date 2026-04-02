@@ -196,18 +196,17 @@ func (h *PDDHandler) ConvertLink(c *gin.Context) {
 		return
 	}
 
-	promoURL, err := h.client.ConvertURL(inputURL)
+	result, err := h.client.ConvertURL(inputURL)
 	if err != nil {
 		respondServerError(c, ErrConvert, err)
 		return
 	}
 
 	response := gin.H{
-		"clickUrl":  promoURL.URL,
-		"schemaUrl": promoURL.SchemaURL,
+		"hasCommission": result.HasCommission,
 	}
 
-	if detail := promoURL.GoodsDetail; detail != nil && detail.GoodsName != "" {
+	if detail := result.GoodsDetail; detail != nil && detail.GoodsName != "" {
 		price := float64(detail.MinGroupPrice) / 100
 		commissionRate := float64(detail.PromotionRate) / 10
 		product := gin.H{
@@ -224,5 +223,53 @@ func (h *PDDHandler) ConvertLink(c *gin.Context) {
 		response["product"] = product
 	}
 
+	if result.HasCommission && result.Promotion != nil {
+		response["clickUrl"] = result.Promotion.URL
+		response["schemaUrl"] = result.Promotion.SchemaURL
+	}
+
+	if len(result.Recommendations) > 0 {
+		var recs []gin.H
+		for _, r := range result.Recommendations {
+			rec := gin.H{
+				"goodsSign":      r.GoodsSign,
+				"name":           r.GoodsName,
+				"imgUrl":         r.GoodsImageURL,
+				"price":          fmt.Sprintf("%.2f", float64(r.MinGroupPrice)/100),
+				"commissionRate": float64(r.PromotionRate) / 10,
+				"shopName":       r.MallName,
+				"salesTip":       r.SalesTip,
+			}
+			if r.GoodsThumbnail != "" {
+				rec["imgUrl"] = r.GoodsThumbnail
+			}
+			if r.HasCoupon && r.CouponDiscount > 0 {
+				rec["coupon"] = fmt.Sprintf("%.2f", float64(r.CouponDiscount)/100)
+			}
+			recs = append(recs, rec)
+		}
+		response["recommendations"] = recs
+	}
+
 	c.JSON(http.StatusOK, response)
+}
+
+func (h *PDDHandler) Promote(c *gin.Context) {
+	var req struct {
+		GoodsSign string `json:"goodsSign" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondBadRequest(c, ErrBadParam, err)
+		return
+	}
+
+	schemaURL, err := h.client.GenerateSchemaURL(req.GoodsSign)
+	if err != nil {
+		respondServerError(c, ErrConvert, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"schemaUrl": schemaURL,
+	})
 }

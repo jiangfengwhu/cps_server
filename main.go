@@ -70,10 +70,11 @@ func main() {
 
 		pddGroup := api.Group("/pdd")
 		{
-			pddGroup.GET("/authority/check", pddHandler.CheckAuthority)
-			pddGroup.GET("/authority/generate", pddHandler.GenerateAuthorityURL)
-			pddGroup.GET("/test/promote", pddHandler.TestPromotionURL)
+			// pddGroup.GET("/authority/check", pddHandler.CheckAuthority)
+			// pddGroup.GET("/authority/generate", pddHandler.GenerateAuthorityURL)
+			// pddGroup.GET("/test/promote", pddHandler.TestPromotionURL)
 			pddGroup.POST("/convert", pddHandler.ConvertLink)
+			pddGroup.POST("/promote", pddHandler.Promote)
 			pddGroup.POST("/orders", pddHandler.QueryOrders)
 		}
 	}
