@@ -6,7 +6,6 @@ import (
 	"cps-go/handler"
 	"cps-go/platform/jd"
 	"cps-go/platform/pdd"
-	"cps-go/platform/taobao"
 	"cps-go/util"
 	"io"
 	"log"
@@ -36,9 +35,6 @@ func main() {
 		log.Fatalf("failed to create JD client: %v", err)
 	}
 	jdHandler := handler.NewJDHandler(jdClient)
-
-	tbClient := taobao.NewClient(cfg.TaobaoAppKey, cfg.TaobaoAppSecret, cfg.TaobaoAdzoneId)
-	tbHandler := handler.NewTaobaoHandler(tbClient)
 
 	pddClient := pdd.NewClient(cfg.PDDClientId, cfg.PDDClientSecret, cfg.PDDPid)
 	pddHandler := handler.NewPDDHandler(pddClient)
@@ -70,13 +66,6 @@ func main() {
 			jdGroup.GET("/test/goods", jdHandler.TestGoodsInfo)
 			jdGroup.POST("/convert", jdHandler.ConvertLink)
 			jdGroup.POST("/orders", jdHandler.QueryOrders)
-		}
-
-		tbGroup := api.Group("/taobao")
-		{
-			tbGroup.GET("/test/recommend", tbHandler.TestRecommend)
-			tbGroup.POST("/convert", tbHandler.ConvertLink)
-			tbGroup.POST("/orders", tbHandler.QueryOrders)
 		}
 
 		pddGroup := api.Group("/pdd")

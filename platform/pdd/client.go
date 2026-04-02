@@ -21,17 +21,19 @@ type PromotionURL struct {
 	ShortURL       string      `json:"short_url"`
 	MobileURL      string      `json:"mobile_url"`
 	MobileShortURL string      `json:"mobile_short_url"`
+	SchemaURL      string      `json:"schema_url"`
 	GoodsDetail    *GoodsBasic `json:"-"`
 }
 
 type GoodsBasic struct {
-	GoodsName     string `json:"goods_name"`
-	GoodsImageURL string `json:"goods_thumbnail_url"`
-	MinGroupPrice int64  `json:"min_group_price"`
-	PromotionRate int64  `json:"promotion_rate"`
-	CouponDiscount int64 `json:"coupon_discount"`
-	HasCoupon     bool   `json:"has_coupon"`
-	MallName      string `json:"mall_name"`
+	GoodsName      string `json:"goods_name"`
+	GoodsImageURL  string `json:"goods_thumbnail_url"`
+	MinGroupPrice  int64  `json:"min_group_price"`
+	PromotionRate  int64  `json:"promotion_rate"`
+	CouponDiscount int64  `json:"coupon_discount"`
+	HasCoupon      bool   `json:"has_coupon"`
+	MallName       string `json:"mall_name"`
+	GoodsSign      string `json:"goods_sign"`
 }
 
 type Client struct {
@@ -49,7 +51,6 @@ func NewClient(clientId, clientSecret, pid string) *Client {
 		HTTP:         &http.Client{Timeout: 15 * time.Second},
 	}
 }
-
 
 func (c *Client) callAPI(method string, bizParams map[string]interface{}) ([]byte, error) {
 	// Flatten all params to string values for consistent signing
@@ -242,7 +243,47 @@ func (c *Client) ConvertURL(sourceURL string) (*PromotionURL, error) {
 
 	result.GoodsDetail = c.trySearchGoods(sourceURL)
 
+	if result.GoodsDetail != nil && result.GoodsDetail.GoodsSign != "" {
+		if schemaURL := c.getSchemaURL(result.GoodsDetail.GoodsSign); schemaURL != "" {
+			result.SchemaURL = schemaURL
+		}
+	}
+
 	return result, nil
+}
+
+func (c *Client) getSchemaURL(goodsSign string) string {
+	bizParams := map[string]interface{}{
+		"p_id":                c.Pid,
+		"goods_sign_list":     []string{goodsSign},
+		"generate_short_url":  true,
+		"generate_schema_url": true,
+	}
+
+	body, err := c.callAPI("pdd.ddk.goods.promotion.url.generate", bizParams)
+	if err != nil {
+		log.Printf("[PDD] get schema_url failed: %v", err)
+		return ""
+	}
+	if apiErr := c.parseError(body); apiErr != nil {
+		log.Printf("[PDD] get schema_url API error: %v", apiErr)
+		return ""
+	}
+
+	var resp struct {
+		Response *struct {
+			UrlList []struct {
+				SchemaURL string `json:"schema_url"`
+			} `json:"goods_promotion_url_list"`
+		} `json:"goods_promotion_url_generate_response"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil || resp.Response == nil || len(resp.Response.UrlList) == 0 {
+		return ""
+	}
+
+	schemaURL := resp.Response.UrlList[0].SchemaURL
+	log.Printf("[PDD] Got schema_url: %s", schemaURL)
+	return schemaURL
 }
 
 // trySearchGoods attempts to get product details via search API (best effort).
@@ -277,4 +318,3 @@ func (c *Client) trySearchGoods(sourceURL string) *GoodsBasic {
 	log.Printf("[PDD] Got goods detail: name=%s price=%d rate=%d", g.GoodsName, g.MinGroupPrice, g.PromotionRate)
 	return &g
 }
-

@@ -328,7 +328,7 @@ func (c *Client) GetPromotionLink(materialURL string) (*PromotionResult, error) 
 			"materialId": materialURL,
 			"unionId":    c.UnionID,
 			"chainType":  3,
-			"sceneId":    1,
+			"sceneId":    2,
 			"command":    1,
 		},
 	}

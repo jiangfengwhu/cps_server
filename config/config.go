@@ -15,10 +15,6 @@ type Config struct {
 	JDSecretKey string `json:"jd_secretKey"`
 	JDUnionID   string `json:"jd_id"`
 
-	TaobaoAppKey    string `json:"taobao_appKey"`
-	TaobaoAppSecret string `json:"taobao_appSecret"`
-	TaobaoAdzoneId  string `json:"taobao_adzoneId"`
-
 	PDDClientId     string `json:"pdd_clientId"`
 	PDDClientSecret string `json:"pdd_clientSecret"`
 	PDDPid          string `json:"pdd_pid"`

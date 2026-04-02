@@ -205,6 +205,10 @@ func (h *PDDHandler) ConvertLink(c *gin.Context) {
 		"clickUrl": clickURL,
 	}
 
+	if promoURL.SchemaURL != "" {
+		response["schemaUrl"] = promoURL.SchemaURL
+	}
+
 	if detail := promoURL.GoodsDetail; detail != nil && detail.GoodsName != "" {
 		price := float64(detail.MinGroupPrice) / 100
 		commissionRate := float64(detail.PromotionRate) / 10
