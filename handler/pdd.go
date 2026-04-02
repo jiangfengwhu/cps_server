@@ -95,7 +95,7 @@ func (h *PDDHandler) QueryOrders(c *gin.Context) {
 			continue
 		}
 
-		rows, err := h.client.QueryOrder(orderSn)
+		row, err := h.client.QueryOrder(orderSn)
 		if err != nil {
 			log.Printf("[ERROR] %s: order=%s %v", ErrOrderQuery, orderSn, err)
 			allOrders = append(allOrders, gin.H{
@@ -104,7 +104,7 @@ func (h *PDDHandler) QueryOrders(c *gin.Context) {
 			})
 			continue
 		}
-		if len(rows) == 0 {
+		if row == nil {
 			allOrders = append(allOrders, gin.H{
 				"orderId": orderSn,
 				"error":   errMsg(ErrOrderNotFound),
@@ -112,32 +112,43 @@ func (h *PDDHandler) QueryOrders(c *gin.Context) {
 			continue
 		}
 
-		for _, row := range rows {
-			netAmount := float64(row.PromotionAmount-row.DuoIdServiceFee) / 100
-			userFee := netAmount * 0.5
-			totalEstimateFee += userFee
-			if row.OrderStatus == 5 {
-				totalActualFee += userFee
-			}
-
-			statusText := pddOrderStatusText(row.OrderStatus)
-			orderTime := ""
-			if row.OrderCreateTime > 0 {
-				orderTime = time.Unix(row.OrderCreateTime, 0).Format("2006-01-02 15:04:05")
-			}
-
-			allOrders = append(allOrders, gin.H{
-				"orderId":         row.OrderSn,
-				"skuName":         row.GoodsName,
-				"price":           fmt.Sprintf("%.2f", float64(row.GoodsPrice)/100),
-				"skuNum":          row.GoodsQuantity,
-				"orderTime":       orderTime,
-				"statusText":      statusText,
-				"userEstimateFee": userFee,
-				"userActualFee":   func() float64 { if row.OrderStatus == 5 { return userFee }; return 0 }(),
-				"platform":        "pdd",
-			})
+		serviceFee := row.GetDuoIdServiceFee()
+		netAmount := float64(row.PromotionAmount-serviceFee) / 100
+		userFee := netAmount * 0.5
+		totalEstimateFee += userFee
+		if row.OrderStatus == 5 {
+			totalActualFee += userFee
 		}
+
+		orderTime := ""
+		if row.OrderCreateTime > 0 {
+			orderTime = time.Unix(row.OrderCreateTime, 0).Format("2006-01-02 15:04:05")
+		}
+
+		orderItem := gin.H{
+			"orderId":         row.OrderSn,
+			"skuName":         row.GoodsName,
+			"imgUrl":          row.GoodsThumbnailURL,
+			"price":           fmt.Sprintf("%.2f", float64(row.GoodsPrice)/100),
+			"orderAmount":     fmt.Sprintf("%.2f", float64(row.OrderAmount)/100),
+			"skuNum":          row.GoodsQuantity,
+			"orderTime":       orderTime,
+			"statusText":      row.OrderStatusDesc,
+			"userEstimateFee": userFee,
+			"userActualFee": func() float64 {
+				if row.OrderStatus == 5 {
+					return userFee
+				}
+				return 0
+			}(),
+			"platform":     "pdd",
+			"mallName":     row.MallName,
+			"categoryName": row.GoodsCategoryName,
+		}
+		if row.FailReason != "" {
+			orderItem["failReason"] = row.FailReason
+		}
+		allOrders = append(allOrders, orderItem)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -191,22 +202,9 @@ func (h *PDDHandler) ConvertLink(c *gin.Context) {
 		return
 	}
 
-	shortURL := promoURL.MobileShortURL
-	if shortURL == "" {
-		shortURL = promoURL.ShortURL
-	}
-	clickURL := promoURL.MobileURL
-	if clickURL == "" {
-		clickURL = promoURL.URL
-	}
-
 	response := gin.H{
-		"shortUrl": shortURL,
-		"clickUrl": clickURL,
-	}
-
-	if promoURL.SchemaURL != "" {
-		response["schemaUrl"] = promoURL.SchemaURL
+		"clickUrl":  promoURL.URL,
+		"schemaUrl": promoURL.SchemaURL,
 	}
 
 	if detail := promoURL.GoodsDetail; detail != nil && detail.GoodsName != "" {

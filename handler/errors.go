@@ -8,19 +8,19 @@ import (
 )
 
 const (
-	ErrBadParam     = "E1001" // 参数错误
-	ErrConvert      = "E2001" // 转链失败
-	ErrOrderQuery   = "E2002" // 订单查询失败
+	ErrBadParam      = "E1001" // 参数错误
+	ErrConvert       = "E2001" // 转链失败
+	ErrOrderQuery    = "E2002" // 订单查询失败
 	ErrOrderNotFound = "E2003" // 订单未找到
-	ErrInternal     = "E5000" // 内部错误
+	ErrInternal      = "E5000" // 内部错误
 )
 
 var errMessages = map[string]string{
-	ErrBadParam:     "参数错误",
-	ErrConvert:      "生成推广链接失败，请稍后重试",
-	ErrOrderQuery:   "查询失败，请稍后重试",
-	ErrOrderNotFound: "未找到推广记录",
-	ErrInternal:     "服务异常，请稍后重试",
+	ErrBadParam:      "参数错误",
+	ErrConvert:       "生成推广链接失败，请稍后重试",
+	ErrOrderQuery:    "该订单不是通过省钱Go下单，无法查询返利",
+	ErrOrderNotFound: "未查询到该订单",
+	ErrInternal:      "服务异常，请稍后重试",
 }
 
 func errMsg(code string) string {

@@ -53,7 +53,6 @@ func NewClient(clientId, clientSecret, pid string) *Client {
 }
 
 func (c *Client) callAPI(method string, bizParams map[string]interface{}) ([]byte, error) {
-	// Flatten all params to string values for consistent signing
 	params := map[string]string{
 		"type":      method,
 		"client_id": c.ClientId,
@@ -126,7 +125,6 @@ func (c *Client) generateSignStr(params map[string]string) string {
 }
 
 func (c *Client) CallAPIRaw(method string, bizParams map[string]string) (json.RawMessage, error) {
-	// Convert string map to interface map for callAPI
 	ifaceParams := make(map[string]interface{}, len(bizParams))
 	for k, v := range bizParams {
 		ifaceParams[k] = v
@@ -158,22 +156,39 @@ func (c *Client) parseError(body []byte) error {
 }
 
 type OrderRow struct {
-	OrderSn           string `json:"order_sn"`
-	GoodsName         string `json:"goods_name"`
-	GoodsPrice        int64  `json:"goods_price"`
-	GoodsQuantity     int64  `json:"goods_quantity"`
-	OrderAmount       int64  `json:"order_amount"`
-	PromotionRate     int64  `json:"promotion_rate"`
-	PromotionAmount   int64  `json:"promotion_amount"`
-	DuoIdServiceFee   int64  `json:"duo_id_service_fee"`
-	OrderStatus       int    `json:"order_status"`
-	OrderStatusDesc   string `json:"order_status_desc"`
-	OrderCreateTime   int64  `json:"order_create_time"`
-	OrderSettleTime   int64  `json:"order_settle_time"`
-	GoodsThumbnailURL string `json:"goods_thumbnail_url"`
+	OrderSn               string      `json:"order_sn"`
+	GoodsName             string      `json:"goods_name"`
+	GoodsPrice            int64       `json:"goods_price"`
+	GoodsQuantity         int64       `json:"goods_quantity"`
+	OrderAmount           int64       `json:"order_amount"`
+	PromotionRate         int64       `json:"promotion_rate"`
+	PromotionAmount       int64       `json:"promotion_amount"`
+	DuoIdServiceFee       json.Number `json:"duo_id_service_fee"`
+	OrderStatus           int         `json:"order_status"`
+	OrderStatusDesc       string      `json:"order_status_desc"`
+	OrderCreateTime       int64       `json:"order_create_time"`
+	OrderGroupSuccessTime int64       `json:"order_group_success_time"`
+	OrderPayTime          int64       `json:"order_pay_time"`
+	OrderSettleTime       int64       `json:"order_settle_time"`
+	GoodsThumbnailURL     string      `json:"goods_thumbnail_url"`
+	GoodsCategoryName     string      `json:"goods_category_name"`
+	MallName              string      `json:"mall_name"`
+	GoodsSign             string      `json:"goods_sign"`
+	Pid                   string      `json:"pid"`
+	PriceCompareStatus    int         `json:"price_compare_status"`
+	FailReason            string      `json:"fail_reason"`
+	NoSubsidyReason       string      `json:"no_subsidy_reason"`
 }
 
-func (c *Client) QueryOrder(orderSn string) ([]OrderRow, error) {
+func (o *OrderRow) GetDuoIdServiceFee() int64 {
+	n, err := o.DuoIdServiceFee.Int64()
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+func (c *Client) QueryOrder(orderSn string) (*OrderRow, error) {
 	bizParams := map[string]interface{}{
 		"order_sn": orderSn,
 	}
@@ -188,106 +203,34 @@ func (c *Client) QueryOrder(orderSn string) ([]OrderRow, error) {
 	}
 
 	var resp struct {
-		Response *struct {
-			OrderList []OrderRow `json:"order_detail_response"`
-		} `json:"order_detail_get_response"`
+		Order *OrderRow `json:"order_detail_response"`
 	}
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, fmt.Errorf("解析订单数据失败: %w", err)
 	}
-	if resp.Response == nil || len(resp.Response.OrderList) == 0 {
+	if resp.Order == nil || resp.Order.OrderSn == "" {
 		return nil, nil
 	}
 
-	return resp.Response.OrderList, nil
+	return resp.Order, nil
 }
 
-// ConvertURL uses pdd.ddk.goods.zs.unit.url.gen to convert a source URL,
-// then tries to fetch product details via search API.
 func (c *Client) ConvertURL(sourceURL string) (*PromotionURL, error) {
-	bizParams := map[string]interface{}{
-		"pid":        c.Pid,
-		"source_url": sourceURL,
-	}
-
-	body, err := c.callAPI("pdd.ddk.goods.zs.unit.url.gen", bizParams)
+	goods, err := c.searchGoods(sourceURL)
 	if err != nil {
 		return nil, err
 	}
 
-	if apiErr := c.parseError(body); apiErr != nil {
-		return nil, apiErr
+	result, err := c.generatePromotionURL(goods.GoodsSign)
+	if err != nil {
+		return nil, err
 	}
 
-	var resp struct {
-		Response *struct {
-			URL            string `json:"url"`
-			ShortURL       string `json:"short_url"`
-			MobileURL      string `json:"mobile_url"`
-			MobileShortURL string `json:"mobile_short_url"`
-		} `json:"goods_zs_unit_generate_response"`
-	}
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, fmt.Errorf("解析转链结果失败: %w", err)
-	}
-	if resp.Response == nil {
-		return nil, fmt.Errorf("转链返回结果为空")
-	}
-
-	result := &PromotionURL{
-		URL:            resp.Response.URL,
-		ShortURL:       resp.Response.ShortURL,
-		MobileURL:      resp.Response.MobileURL,
-		MobileShortURL: resp.Response.MobileShortURL,
-	}
-
-	result.GoodsDetail = c.trySearchGoods(sourceURL)
-
-	if result.GoodsDetail != nil && result.GoodsDetail.GoodsSign != "" {
-		if schemaURL := c.getSchemaURL(result.GoodsDetail.GoodsSign); schemaURL != "" {
-			result.SchemaURL = schemaURL
-		}
-	}
-
+	result.GoodsDetail = goods
 	return result, nil
 }
 
-func (c *Client) getSchemaURL(goodsSign string) string {
-	bizParams := map[string]interface{}{
-		"p_id":                c.Pid,
-		"goods_sign_list":     []string{goodsSign},
-		"generate_short_url":  true,
-		"generate_schema_url": true,
-	}
-
-	body, err := c.callAPI("pdd.ddk.goods.promotion.url.generate", bizParams)
-	if err != nil {
-		log.Printf("[PDD] get schema_url failed: %v", err)
-		return ""
-	}
-	if apiErr := c.parseError(body); apiErr != nil {
-		log.Printf("[PDD] get schema_url API error: %v", apiErr)
-		return ""
-	}
-
-	var resp struct {
-		Response *struct {
-			UrlList []struct {
-				SchemaURL string `json:"schema_url"`
-			} `json:"goods_promotion_url_list"`
-		} `json:"goods_promotion_url_generate_response"`
-	}
-	if err := json.Unmarshal(body, &resp); err != nil || resp.Response == nil || len(resp.Response.UrlList) == 0 {
-		return ""
-	}
-
-	schemaURL := resp.Response.UrlList[0].SchemaURL
-	log.Printf("[PDD] Got schema_url: %s", schemaURL)
-	return schemaURL
-}
-
-// trySearchGoods attempts to get product details via search API (best effort).
-func (c *Client) trySearchGoods(sourceURL string) *GoodsBasic {
+func (c *Client) searchGoods(sourceURL string) (*GoodsBasic, error) {
 	bizParams := map[string]interface{}{
 		"keyword":   sourceURL,
 		"page":      1,
@@ -297,12 +240,10 @@ func (c *Client) trySearchGoods(sourceURL string) *GoodsBasic {
 
 	body, err := c.callAPI("pdd.ddk.goods.search", bizParams)
 	if err != nil {
-		log.Printf("[PDD] search for details failed: %v", err)
-		return nil
+		return nil, fmt.Errorf("搜索商品失败: %w", err)
 	}
 	if apiErr := c.parseError(body); apiErr != nil {
-		log.Printf("[PDD] search for details API error: %v", apiErr)
-		return nil
+		return nil, apiErr
 	}
 
 	var resp struct {
@@ -310,11 +251,59 @@ func (c *Client) trySearchGoods(sourceURL string) *GoodsBasic {
 			GoodsList []GoodsBasic `json:"goods_list"`
 		} `json:"goods_search_response"`
 	}
-	if err := json.Unmarshal(body, &resp); err != nil || resp.Response == nil || len(resp.Response.GoodsList) == 0 {
-		return nil
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("解析搜索结果失败: %w", err)
+	}
+	if resp.Response == nil || len(resp.Response.GoodsList) == 0 {
+		return nil, fmt.Errorf("该商品暂无返利")
 	}
 
-	g := resp.Response.GoodsList[0]
-	log.Printf("[PDD] Got goods detail: name=%s price=%d rate=%d", g.GoodsName, g.MinGroupPrice, g.PromotionRate)
-	return &g
+	g := &resp.Response.GoodsList[0]
+	log.Printf("[PDD] Got goods: name=%s price=%d rate=%d sign=%s", g.GoodsName, g.MinGroupPrice, g.PromotionRate, g.GoodsSign)
+	return g, nil
+}
+
+func (c *Client) generatePromotionURL(goodsSign string) (*PromotionURL, error) {
+	bizParams := map[string]interface{}{
+		"p_id":                c.Pid,
+		"goods_sign_list":     []string{goodsSign},
+		"generate_short_url":  true,
+		"generate_schema_url": true,
+	}
+
+	body, err := c.callAPI("pdd.ddk.goods.promotion.url.generate", bizParams)
+	if err != nil {
+		return nil, fmt.Errorf("生成推广链接失败: %w", err)
+	}
+	if apiErr := c.parseError(body); apiErr != nil {
+		return nil, apiErr
+	}
+
+	var resp struct {
+		Response *struct {
+			UrlList []struct {
+				URL            string `json:"url"`
+				ShortURL       string `json:"short_url"`
+				MobileURL      string `json:"mobile_url"`
+				MobileShortURL string `json:"mobile_short_url"`
+				SchemaURL      string `json:"schema_url"`
+			} `json:"goods_promotion_url_list"`
+		} `json:"goods_promotion_url_generate_response"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("解析推广链接失败: %w", err)
+	}
+	if resp.Response == nil || len(resp.Response.UrlList) == 0 {
+		return nil, fmt.Errorf("生成推广链接返回为空")
+	}
+
+	u := resp.Response.UrlList[0]
+	log.Printf("[PDD] Got promotion URL: short=%s schema=%s", u.ShortURL, u.SchemaURL)
+	return &PromotionURL{
+		URL:            u.URL,
+		ShortURL:       u.ShortURL,
+		MobileURL:      u.MobileURL,
+		MobileShortURL: u.MobileShortURL,
+		SchemaURL:      u.SchemaURL,
+	}, nil
 }
