@@ -75,6 +75,7 @@ func main() {
 			// pddGroup.GET("/test/promote", pddHandler.TestPromotionURL)
 			pddGroup.POST("/convert", pddHandler.ConvertLink)
 			pddGroup.POST("/promote", pddHandler.Promote)
+			pddGroup.POST("/search", pddHandler.SearchGoods)
 			pddGroup.POST("/orders", pddHandler.QueryOrders)
 		}
 	}

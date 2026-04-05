@@ -223,16 +223,17 @@ type ConvertResult struct {
 }
 
 type RecommendGoods struct {
-	GoodsSign      string `json:"goods_sign"`
-	GoodsName      string `json:"goods_name"`
-	GoodsImageURL  string `json:"goods_image_url"`
-	GoodsThumbnail string `json:"goods_thumbnail_url"`
-	MinGroupPrice  int64  `json:"min_group_price"`
-	PromotionRate  int64  `json:"promotion_rate"`
-	CouponDiscount int64  `json:"coupon_discount"`
-	HasCoupon      bool   `json:"has_coupon"`
-	MallName       string `json:"mall_name"`
-	SalesTip       string `json:"sales_tip"`
+	GoodsSign        string `json:"goods_sign"`
+	GoodsName        string `json:"goods_name"`
+	GoodsImageURL    string `json:"goods_image_url"`
+	GoodsThumbnail   string `json:"goods_thumbnail_url"`
+	MinGroupPrice    int64  `json:"min_group_price"`
+	PromotionRate    int64  `json:"promotion_rate"`
+	CouponDiscount   int64  `json:"coupon_discount"`
+	HasCoupon        bool   `json:"has_coupon"`
+	MallName         string `json:"mall_name"`
+	SalesTip         string `json:"sales_tip"`
+	RealtimeSalesTip string `json:"realtime_sales_tip"`
 }
 
 func (c *Client) ConvertURL(sourceURL string) (*ConvertResult, error) {
@@ -262,23 +263,32 @@ func (c *Client) ConvertURL(sourceURL string) (*ConvertResult, error) {
 	}, nil
 }
 
-func (c *Client) GenerateSchemaURL(goodsSign string) (string, error) {
+func (c *Client) GeneratePromoteURL(goodsSign string) (string, error) {
 	promo, err := c.generatePromotionURL(goodsSign)
 	if err != nil {
 		return "", err
 	}
-	if promo.SchemaURL == "" {
-		return "", fmt.Errorf("未获取到schema_url")
+	if promo.MobileShortURL != "" {
+		return promo.MobileShortURL, nil
 	}
-	return promo.SchemaURL, nil
+	if promo.MobileURL != "" {
+		return promo.MobileURL, nil
+	}
+	return promo.URL, nil
 }
 
 func (c *Client) recommendGoods(goodsSign string) []RecommendGoods {
+	return c.fetchRecommendGoods(3, 20, []string{goodsSign})
+}
+
+func (c *Client) fetchRecommendGoods(channelType int, limit int, goodsSignList []string) []RecommendGoods {
 	bizParams := map[string]interface{}{
-		"channel_type":    5,
-		"goods_sign_list": []string{goodsSign},
-		"pid":             c.Pid,
-		"limit":           20,
+		"channel_type": channelType,
+		"pid":          c.Pid,
+		"limit":        limit,
+	}
+	if len(goodsSignList) > 0 {
+		bizParams["goods_sign_list"] = goodsSignList
 	}
 
 	body, err := c.callAPI("pdd.ddk.goods.recommend.get", bizParams)
@@ -308,6 +318,10 @@ func (c *Client) recommendGoods(goodsSign string) []RecommendGoods {
 	}
 	log.Printf("[PDD] Got %d recommendations with commission", len(result))
 	return result
+}
+
+func (c *Client) HotRecommendGoods(limit int) []RecommendGoods {
+	return c.fetchRecommendGoods(5, limit, nil)
 }
 
 func (c *Client) searchGoods(sourceURL string) (*GoodsBasic, error) {
@@ -385,5 +399,78 @@ func (c *Client) generatePromotionURL(goodsSign string) (*PromotionURL, error) {
 		MobileURL:      u.MobileURL,
 		MobileShortURL: u.MobileShortURL,
 		SchemaURL:      u.SchemaURL,
+	}, nil
+}
+
+type SearchResult struct {
+	GoodsList  []SearchGoods `json:"goods_list"`
+	ListID     string        `json:"list_id"`
+	SearchID   string        `json:"search_id"`
+	TotalCount int           `json:"total_count"`
+}
+
+type SearchGoods struct {
+	GoodsSign      string `json:"goods_sign"`
+	GoodsName      string `json:"goods_name"`
+	GoodsImageURL  string `json:"goods_image_url"`
+	GoodsThumbnail string `json:"goods_thumbnail_url"`
+	MinGroupPrice  int64  `json:"min_group_price"`
+	MinNormalPrice int64  `json:"min_normal_price"`
+	PromotionRate  int64  `json:"promotion_rate"`
+	CouponDiscount int64  `json:"coupon_discount"`
+	HasCoupon      bool   `json:"has_coupon"`
+	MallName       string `json:"mall_name"`
+	SalesTip       string `json:"sales_tip"`
+	OptName        string `json:"opt_name"`
+	MerchantType   int    `json:"merchant_type"`
+}
+
+func (c *Client) SearchGoodsList(keyword string, page int, pageSize int, sortType int, listID string) (*SearchResult, error) {
+	if pageSize <= 0 || pageSize > 100 {
+		pageSize = 20
+	}
+	if page <= 0 {
+		page = 1
+	}
+
+	bizParams := map[string]interface{}{
+		"keyword":   keyword,
+		"page":      page,
+		"page_size": pageSize,
+		"pid":       c.Pid,
+		"sort_type": sortType,
+	}
+	if listID != "" {
+		bizParams["list_id"] = listID
+	}
+
+	body, err := c.callAPI("pdd.ddk.goods.search", bizParams)
+	if err != nil {
+		return nil, fmt.Errorf("搜索商品失败: %w", err)
+	}
+	if apiErr := c.parseError(body); apiErr != nil {
+		return nil, apiErr
+	}
+
+	var resp struct {
+		Response *struct {
+			GoodsList  []SearchGoods `json:"goods_list"`
+			ListID     string        `json:"list_id"`
+			SearchID   string        `json:"search_id"`
+			TotalCount int           `json:"total_count"`
+		} `json:"goods_search_response"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("解析搜索结果失败: %w", err)
+	}
+	if resp.Response == nil {
+		return &SearchResult{}, nil
+	}
+
+	return &SearchResult{
+		GoodsList:  resp.Response.GoodsList,
+		ListID:     resp.Response.ListID,
+		SearchID:   resp.Response.SearchID,
+		TotalCount: resp.Response.TotalCount,
 	}, nil
 }

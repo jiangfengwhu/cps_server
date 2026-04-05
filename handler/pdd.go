@@ -225,7 +225,13 @@ func (h *PDDHandler) ConvertLink(c *gin.Context) {
 
 	if result.HasCommission && result.Promotion != nil {
 		response["clickUrl"] = result.Promotion.URL
-		response["schemaUrl"] = result.Promotion.SchemaURL
+		if result.Promotion.MobileShortURL != "" {
+			response["mobileUrl"] = result.Promotion.MobileShortURL
+		} else if result.Promotion.MobileURL != "" {
+			response["mobileUrl"] = result.Promotion.MobileURL
+		} else {
+			response["mobileUrl"] = result.Promotion.URL
+		}
 	}
 
 	if len(result.Recommendations) > 0 {
@@ -263,13 +269,97 @@ func (h *PDDHandler) Promote(c *gin.Context) {
 		return
 	}
 
-	schemaURL, err := h.client.GenerateSchemaURL(req.GoodsSign)
+	promoteURL, err := h.client.GeneratePromoteURL(req.GoodsSign)
 	if err != nil {
 		respondServerError(c, ErrConvert, err)
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"schemaUrl": schemaURL,
+		"mobileUrl": promoteURL,
+	})
+}
+
+func (h *PDDHandler) SearchGoods(c *gin.Context) {
+	var req struct {
+		Keyword  string `json:"keyword"`
+		Page     int    `json:"page"`
+		PageSize int    `json:"pageSize"`
+		SortType int    `json:"sortType"`
+		ListID   string `json:"listId"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		respondBadRequest(c, ErrBadParam, err)
+		return
+	}
+
+	if req.Keyword == "" {
+		limit := req.PageSize
+		if limit <= 0 {
+			limit = 50
+		}
+		recs := h.client.HotRecommendGoods(limit)
+		var items []gin.H
+		for _, g := range recs {
+			imgUrl := g.GoodsThumbnail
+			if imgUrl == "" {
+				imgUrl = g.GoodsImageURL
+			}
+			item := gin.H{
+				"goodsSign":      g.GoodsSign,
+				"name":           g.GoodsName,
+				"imgUrl":         imgUrl,
+				"price":          fmt.Sprintf("%.2f", float64(g.MinGroupPrice)/100),
+				"commissionRate": float64(g.PromotionRate) / 10,
+				"shopName":       g.MallName,
+				"salesTip":       g.SalesTip,
+			}
+			if g.RealtimeSalesTip != "" {
+				item["salesTip"] = g.RealtimeSalesTip
+			}
+			if g.HasCoupon && g.CouponDiscount > 0 {
+				item["coupon"] = fmt.Sprintf("%.2f", float64(g.CouponDiscount)/100)
+			}
+			items = append(items, item)
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"goods":      items,
+			"totalCount": len(items),
+		})
+		return
+	}
+
+	result, err := h.client.SearchGoodsList(req.Keyword, req.Page, req.PageSize, req.SortType, req.ListID)
+	if err != nil {
+		respondServerError(c, ErrInternal, err)
+		return
+	}
+
+	var items []gin.H
+	for _, g := range result.GoodsList {
+		imgUrl := g.GoodsThumbnail
+		if imgUrl == "" {
+			imgUrl = g.GoodsImageURL
+		}
+		item := gin.H{
+			"goodsSign":      g.GoodsSign,
+			"name":           g.GoodsName,
+			"imgUrl":         imgUrl,
+			"price":          fmt.Sprintf("%.2f", float64(g.MinGroupPrice)/100),
+			"commissionRate": float64(g.PromotionRate) / 10,
+			"shopName":       g.MallName,
+			"salesTip":       g.SalesTip,
+		}
+		if g.HasCoupon && g.CouponDiscount > 0 {
+			item["coupon"] = fmt.Sprintf("%.2f", float64(g.CouponDiscount)/100)
+		}
+		items = append(items, item)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"goods":      items,
+		"listId":     result.ListID,
+		"searchId":   result.SearchID,
+		"totalCount": result.TotalCount,
 	})
 }
